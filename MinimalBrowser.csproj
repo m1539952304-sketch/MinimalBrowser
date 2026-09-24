@@ -16,9 +16,9 @@
   <!-- 嵌入 exe 的图标与版本信息 -->
   <PropertyGroup>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>1.3.0</Version>
-    <AssemblyVersion>1.3.0.0</AssemblyVersion>
-    <FileVersion>1.3.0.0</FileVersion>
+    <Version>1.3.1</Version>
+    <AssemblyVersion>1.3.1.0</AssemblyVersion>
+    <FileVersion>1.3.1.0</FileVersion>
     <Product>MinimalBrowser</Product>
     <Description>Windows 上基于 WinForms + WebView2 的极简浏览器</Description>
     <Authors>m1539952304-sketch</Authors>
