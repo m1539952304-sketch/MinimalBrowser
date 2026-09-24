@@ -11,6 +11,7 @@ public sealed class DownloadForm : Form
 
     private readonly ListView _list = new();
     private readonly Button _btnOpenFolder = new();
+    private readonly Button _btnRename = new();
     private readonly Button _btnClear = new();
     private readonly Dictionary<CoreWebView2DownloadOperation, Row> _rows = new();
     private readonly System.Windows.Forms.Timer _ticker = new() { Interval = 500 };
@@ -18,7 +19,7 @@ public sealed class DownloadForm : Form
     private sealed class Row
     {
         public ListViewItem Item { get; }
-        public string TargetPath { get; }
+        public string TargetPath { get; set; }
         public bool Completed { get; set; }
         public bool Active { get; set; } = true;
         public long LastBytes { get; set; }
@@ -47,12 +48,20 @@ public sealed class DownloadForm : Form
         _list.MultiSelect = false;
         _list.HideSelection = false;
         _list.HeaderStyle = ColumnHeaderStyle.Nonclickable;
+        _list.LabelEdit = true; // 就地编辑文件名列
         _list.Columns.Add("文件名", 220);
         _list.Columns.Add("进度", 190);
         _list.Columns.Add("速度", 100);
         _list.Columns.Add("状态", 80);
         _list.Columns.Add("保存位置", 260);
         _list.DoubleClick += (_, _) => OpenSelectedFile();
+        _list.AfterLabelEdit += AfterLabelEdit;
+        _list.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode != Keys.F2) return;
+            BeginRename();
+            e.Handled = true;
+        };
 
         _ticker.Tick += (_, _) => RefreshActive();
 
@@ -68,15 +77,22 @@ public sealed class DownloadForm : Form
         _btnOpenFolder.AutoSize = true;
         _btnOpenFolder.Click += (_, _) => OpenSelectedFolder();
 
+        _btnRename.Text = "重命名";
+        _btnRename.AutoSize = true;
+        _btnRename.Click += (_, _) => BeginRename();
+
         _btnClear.Text = "清除已完成";
         _btnClear.AutoSize = true;
         _btnClear.Click += (_, _) => ClearCompleted();
 
         bottom.Controls.Add(_btnOpenFolder);
+        bottom.Controls.Add(_btnRename);
         bottom.Controls.Add(_btnClear);
 
         Controls.Add(_list);
         Controls.Add(bottom);
+
+        if (AppIcon.Value is { } icon) Icon = icon;
     }
 
     /// <summary>把一个新下载任务加入列表，并持续跟踪它的进度。</summary>
@@ -184,10 +200,85 @@ public sealed class DownloadForm : Form
         }
     }
 
+    private Row? RowOf(ListViewItem item) =>
+        _rows.Values.FirstOrDefault(r => r.Item == item);
+
+    private void BeginRename()
+    {
+        if (_list.SelectedItems.Count == 0) return;
+
+        var row = RowOf(_list.SelectedItems[0]);
+        if (row is null) return;
+
+        if (!row.Completed)
+        {
+            MessageBox.Show(this, "下载中的文件不能重命名，请等待下载完成。", "下载内容",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        _list.SelectedItems[0].BeginEdit();
+    }
+
+    /// <summary>文件名列就地编辑结束后，把磁盘上的文件一起改名。</summary>
+    private void AfterLabelEdit(object? sender, LabelEditEventArgs e)
+    {
+        if (e.Label is null) return; // 用户按 Esc 放弃
+
+        var row = RowOf(_list.Items[e.Item]);
+        if (row is null)
+        {
+            e.CancelEdit = true;
+            return;
+        }
+
+        var newName = e.Label.Trim();
+        if (newName.Length == 0 || newName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        {
+            e.CancelEdit = true;
+            MessageBox.Show(this, "文件名不能为空，也不能包含 \\ / : * ? \" < > | 等字符。", "下载内容",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        var directory = Path.GetDirectoryName(row.TargetPath);
+        if (string.IsNullOrEmpty(directory))
+        {
+            e.CancelEdit = true;
+            return;
+        }
+
+        var newPath = Path.Combine(directory, newName);
+        if (string.Equals(newPath, row.TargetPath, StringComparison.OrdinalIgnoreCase)) return;
+
+        if (File.Exists(newPath))
+        {
+            e.CancelEdit = true;
+            MessageBox.Show(this, "该目录下已存在同名文件，请换一个名字。", "下载内容",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        try
+        {
+            File.Move(row.TargetPath, newPath);
+        }
+        catch (Exception ex)
+        {
+            e.CancelEdit = true;
+            MessageBox.Show(this, "重命名失败：" + ex.Message, "下载内容",
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        row.TargetPath = newPath;
+        row.Item.SubItems[4].Text = newPath;
+    }
+
     private void OpenSelectedFile()
     {
         if (_list.SelectedItems.Count == 0) return;
-        var path = _rows.Values.FirstOrDefault(r => r.Item == _list.SelectedItems[0])?.TargetPath;
+        var path = RowOf(_list.SelectedItems[0])?.TargetPath;
         if (string.IsNullOrEmpty(path) || !File.Exists(path)) return;
         StartProcess(new ProcessStartInfo(path) { UseShellExecute = true });
     }
@@ -195,13 +286,13 @@ public sealed class DownloadForm : Form
     private void OpenSelectedFolder()
     {
         if (_list.SelectedItems.Count == 0) return;
-        var path = _rows.Values.FirstOrDefault(r => r.Item == _list.SelectedItems[0])?.TargetPath;
+        var path = RowOf(_list.SelectedItems[0])?.TargetPath;
         if (string.IsNullOrEmpty(path)) return;
 
-        if (File.Exists(path))
-            StartProcess(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
-        else
-            StartProcess(new ProcessStartInfo("explorer.exe", $"/select,\"{Path.GetDirectoryName(path)}\"") { UseShellExecute = true });
+        var target = File.Exists(path) ? path : Path.GetDirectoryName(path);
+        if (string.IsNullOrEmpty(target)) return;
+
+        StartProcess(new ProcessStartInfo("explorer.exe", $"/select,\"{target}\"") { UseShellExecute = true });
     }
 
     private static void StartProcess(ProcessStartInfo info)

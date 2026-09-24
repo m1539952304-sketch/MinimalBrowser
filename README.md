@@ -7,11 +7,12 @@
 ## 功能
 
 - **多标签页** —— 标签宽度固定，中键关闭，右键菜单可「关闭标签页 / 关闭其他标签页」；末尾常驻 `＋` 页，点击即新建
-- **地址栏** —— 自动识别输入内容：带 `://` 按网址处理，不含空格且含 `.` 自动补 `https://`，其余走 Bing 搜索
+- **地址栏** —— 自动识别输入内容：带 `://` 按网址处理，不含空格且含 `.` 自动补 `https://`，其余走搜索
+- **多搜索引擎** —— 地址栏左侧下拉切换 Bing / Google / 百度 / DuckDuckGo，选择结果写入本地配置并长期生效
 - **基础导航** —— 前进 / 后退 / 刷新 / 停止加载 / 主页
 - **收藏夹** —— 一键收藏（`Ctrl+D`），侧栏查看、跳转、删除
 - **历史记录** —— 自动记录，同地址 5 秒内去重，上限 2000 条，支持单条删除和一键清空
-- **下载管理** —— 接管下载并显示进度 / 实时速度 / 状态，双击打开文件，可定位到文件夹
+- **下载管理** —— 每次下载都弹保存对话框自选文件名与目录，面板显示进度 / 实时速度 / 状态，支持重命名（`F2`）
 - **全屏适配** —— 页面进入全屏（如视频）时自动隐藏工具栏
 - **新窗口接管** —— 页面中 `target=_blank` 的链接在新标签页打开
 
@@ -20,6 +21,7 @@
 | 内容 | 路径 |
 | --- | --- |
 | 收藏夹 / 历史 | `%APPDATA%\MinimalBrowser\bookmarks.json`、`history.json` |
+| 用户偏好（搜索引擎等） | `%APPDATA%\MinimalBrowser\settings.json` |
 | 浏览器缓存 | `%LOCALAPPDATA%\MinimalBrowser\WebView2\` |
 | 默认下载目录 | `%USERPROFILE%\Downloads` |
 
@@ -35,8 +37,8 @@
 
 | 版本 | 大小 | 说明 |
 | --- | --- | --- |
-| `MinimalBrowser-v1.0.1-win-x64.exe` | 约 63 MB | 免安装单文件，双击即用，无需安装 .NET 运行时 |
-| `MinimalBrowser-v1.0.1-win-x64-framework-dependent.zip` | 约 425 KB | 需预装 .NET 8 Desktop Runtime；解压后整个文件夹一起使用，不能只拷贝 exe |
+| `MinimalBrowser-v1.1.0-win-x64.exe` | 约 63 MB | 免安装单文件，双击即用，无需安装 .NET 运行时 |
+| `MinimalBrowser-v1.1.0-win-x64-framework-dependent.zip` | 约 550 KB | 需预装 .NET 8 Desktop Runtime；解压后整个文件夹一起使用，不能只拷贝 exe |
 
 ## 从源码构建
 
@@ -72,6 +74,7 @@ dotnet publish -c Release -r win-x64 --self-contained false
 | `Ctrl + B` | 显示收藏夹 |
 | `Ctrl + H` | 显示历史记录 |
 | `Ctrl + J` | 显示下载内容 |
+| `F2` | 重命名下载列表中选中的文件（焦点在下载面板时） |
 | `F5` | 刷新 |
 | `Alt + ←` / `Alt + →` | 后退 / 前进 |
 | `F12` | 开发者工具（交给 WebView2 处理） |
@@ -80,12 +83,13 @@ dotnet publish -c Release -r win-x64 --self-contained false
 
 ```
 MinimalBrowser/
-├── Program.cs              # 入口，PerMonitorV2 DPI
+├── Program.cs              # 入口（PerMonitorV2 DPI）与程序图标加载
 ├── MainForm.cs             # 主窗口：工具栏、标签页、侧栏、下载、快捷键
 ├── BrowserTab.cs           # 单个标签页，封装 WebView2 并收敛事件
-├── BrowserStore.cs         # 收藏夹 / 历史的 JSON 本地存储
-├── DownloadForm.cs         # 下载列表面板
-├── Models.cs               # Bookmark / HistoryEntry 数据模型
+├── BrowserStore.cs         # 收藏夹 / 历史 / 用户偏好的 JSON 本地存储
+├── DownloadForm.cs         # 下载列表面板（进度、速度、重命名）
+├── Models.cs               # Bookmark / HistoryEntry / AppSettings 数据模型
+├── app.ico                 # 程序图标（16~256 共 7 个尺寸）
 └── MinimalBrowser.csproj   # net8.0-windows + WinForms + WebView2
 ```
 
@@ -93,15 +97,17 @@ MinimalBrowser/
 
 - **共享 WebView2 环境**：所有标签页共用一个 `CoreWebView2Environment`（同一 user data 目录），共享浏览器进程，内存开销低于每标签一个进程。
 - **快捷键拦截**：网页获得焦点时键盘消息直接进 WebView2，不经过 WinForms，因此用 `IMessageFilter` 在消息分发前拦截；`Ctrl+F`、`Ctrl+P`、缩放等仍交给 WebView2 原生处理。
-- **自定义下载界面**：接管 `DownloadStarting` 并设置 `Handled = true` 屏蔽 WebView2 默认下载 UI，自动重名避让。速度由 `BytesReceived` 的相邻两次采样差值估算，采样间隔不足 400ms 时沿用上次读数，避免读数抖动。
+- **下载流程**：接管 `DownloadStarting`，弹 `SaveFileDialog` 让用户决定文件名与目录（取消则设置 `e.Cancel` 放弃下载），再设 `Handled = true` 屏蔽 WebView2 默认下载 UI。速度由 `BytesReceived` 的相邻两次采样差值估算，采样间隔不足 400ms 时沿用上次读数以避免抖动。
+- **下载重命名**：复用 `ListView.LabelEdit` 就地编辑文件名列，`AfterLabelEdit` 里校验非法字符与同名冲突后执行 `File.Move`，下载中的文件拒绝改名。
 - **加载状态**：`NavigationStarting` / `NavigationCompleted` 维护 `BrowserTab.IsLoading`，用于控制「停止」按钮的启用状态。
+- **图标**：`app.ico` 同时通过 `ApplicationIcon` 嵌入 exe 资源（资源管理器 / 任务栏），并以 `LogicalName=MinimalBrowser.app.ico` 作为清单资源嵌入，供 `AppIcon` 在运行时读取后赋给窗口标题栏。
 
 ## 已知限制
 
 - 仅支持 Windows x64
 - 未实现无痕模式、扩展、账号同步
 - 未做崩溃恢复，关闭即丢失标签页
-- 未提供程序图标、下载重命名、多搜索引擎切换
+- 下载重命名仅支持已完成的任务，不能重命名下载中的文件
 
 ## License
 

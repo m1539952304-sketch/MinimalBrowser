@@ -5,7 +5,15 @@ namespace MinimalBrowser;
 public sealed class MainForm : Form
 {
     private const string HomePage = "about:blank";
-    private const string SearchPrefix = "https://www.bing.com/search?q=";
+
+    /// <summary>可选搜索引擎。前缀已包含参数名，直接拼接转义后的关键词即可。</summary>
+    private static readonly (string Name, string Prefix)[] SearchEngines =
+    {
+        ("Bing", "https://www.bing.com/search?q="),
+        ("Google", "https://www.google.com/search?q="),
+        ("百度", "https://www.baidu.com/s?wd="),
+        ("DuckDuckGo", "https://duckduckgo.com/?q="),
+    };
 
     private static readonly string DownloadsFolder = ResolveDownloadsFolder();
 
@@ -35,6 +43,15 @@ public sealed class MainForm : Form
     private readonly ToolStripButton _btnReload = TextButton("⟳", "刷新 (F5)");
     private readonly ToolStripButton _btnStop = TextButton("✕", "停止加载");
     private readonly ToolStripButton _btnHome = TextButton("⌂", "主页");
+
+    private readonly ToolStripComboBox _engine = new()
+    {
+        AutoSize = false,
+        Width = 104,
+        DropDownStyle = ComboBoxStyle.DropDownList,
+        FlatStyle = FlatStyle.Flat,
+        ToolTipText = "选择搜索引擎",
+    };
 
     private readonly ToolStripTextBox _address = new()
     {
@@ -107,6 +124,7 @@ public sealed class MainForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         KeyPreview = true;
         Font = new Font("Microsoft YaHei UI", 9F);
+        if (AppIcon.Value is { } icon) Icon = icon;
 
         BuildToolbar();
         BuildSidePanel();
@@ -137,9 +155,21 @@ public sealed class MainForm : Form
         _toolbar.Items.AddRange(new ToolStripItem[]
         {
             _btnBack, _btnForward, _btnReload, _btnStop, _btnHome,
+            _engine,
             _address,
             _btnBookmark, _btnFavorites, _btnHistory, _btnDownloads, _btnNewTab,
         });
+
+        foreach (var (name, _) in SearchEngines) _engine.Items.Add(name);
+
+        // 先设初始值再接事件，避免初始化时触发一次多余保存
+        int saved = Array.FindIndex(SearchEngines, e => e.Name == _store.Settings.SearchEngine);
+        _engine.SelectedIndex = saved < 0 ? 0 : saved;
+        _engine.SelectedIndexChanged += (_, _) =>
+        {
+            _store.Settings.SearchEngine = SearchEngines[_engine.SelectedIndex].Name;
+            _store.SaveSettings();
+        };
 
         _toolbar.Resize += (_, _) => LayoutAddressBar();
 
@@ -353,7 +383,12 @@ public sealed class MainForm : Form
 
     // ================= 导航 =================
 
-    private static string NormalizeInput(string raw)
+    private string SearchPrefix() =>
+        _engine.SelectedIndex >= 0 && _engine.SelectedIndex < SearchEngines.Length
+            ? SearchEngines[_engine.SelectedIndex].Prefix
+            : SearchEngines[0].Prefix;
+
+    private string NormalizeInput(string raw)
     {
         var text = (raw ?? "").Trim();
         if (text.Length == 0) return HomePage;
@@ -370,7 +405,7 @@ public sealed class MainForm : Form
             return "https://" + text;
         }
 
-        return SearchPrefix + Uri.EscapeDataString(text);
+        return SearchPrefix() + Uri.EscapeDataString(text);
     }
 
     private void Navigate(string raw)
@@ -561,30 +596,30 @@ public sealed class MainForm : Form
         var fileName = Path.GetFileName(e.ResultFilePath);
         if (string.IsNullOrWhiteSpace(fileName)) fileName = "download";
 
-        var targetPath = MakeUniquePath(Path.Combine(DownloadsFolder, fileName));
+        // 由用户决定文件名与保存位置；取消则放弃本次下载
+        using var dialog = new SaveFileDialog
+        {
+            Title = "保存文件",
+            FileName = fileName,
+            InitialDirectory = DownloadsFolder,
+            Filter = "所有文件 (*.*)|*.*",
+            OverwritePrompt = true,
+            RestoreDirectory = true,
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            e.Cancel = true;
+            return;
+        }
+
+        var targetPath = dialog.FileName;
 
         e.ResultFilePath = targetPath;
         e.Handled = true; // 用自己的下载面板，屏蔽 WebView2 默认下载界面
 
-        _downloadForm.Track(operation, fileName, targetPath);
+        _downloadForm.Track(operation, Path.GetFileName(targetPath), targetPath);
         if (!_downloadForm.Visible) _downloadForm.Show(this);
-    }
-
-    private static string MakeUniquePath(string path)
-    {
-        if (!File.Exists(path)) return path;
-
-        var directory = Path.GetDirectoryName(path) ?? DownloadsFolder;
-        var name = Path.GetFileNameWithoutExtension(path);
-        var extension = Path.GetExtension(path);
-
-        for (int i = 1; i < 1000; i++)
-        {
-            var candidate = Path.Combine(directory, $"{name} ({i}){extension}");
-            if (!File.Exists(candidate)) return candidate;
-        }
-
-        return Path.Combine(directory, $"{name} ({Guid.NewGuid():N}){extension}");
     }
 
     private static string ResolveDownloadsFolder()

@@ -13,9 +13,11 @@ public sealed class BrowserStore
 
     private readonly string _bookmarksPath;
     private readonly string _historyPath;
+    private readonly string _settingsPath;
 
     public List<Bookmark> Bookmarks { get; private set; }
     public List<HistoryEntry> History { get; private set; }
+    public AppSettings Settings { get; private set; }
 
     public BrowserStore()
     {
@@ -26,9 +28,11 @@ public sealed class BrowserStore
 
         _bookmarksPath = Path.Combine(dir, "bookmarks.json");
         _historyPath = Path.Combine(dir, "history.json");
+        _settingsPath = Path.Combine(dir, "settings.json");
 
         Bookmarks = Load<Bookmark>(_bookmarksPath);
         History = Load<HistoryEntry>(_historyPath);
+        Settings = LoadOne(_settingsPath, new AppSettings());
     }
 
     // ---------- 收藏夹 ----------
@@ -104,6 +108,10 @@ public sealed class BrowserStore
 
     public void SaveHistory() => Save(_historyPath, History);
 
+    // ---------- 用户偏好 ----------
+
+    public void SaveSettings() => SaveOne(_settingsPath, Settings);
+
     // ---------- 读写 ----------
 
     private static List<T> Load<T>(string path)
@@ -119,6 +127,19 @@ public sealed class BrowserStore
         }
     }
 
+    private static T LoadOne<T>(string path, T fallback)
+    {
+        try
+        {
+            if (!File.Exists(path)) return fallback;
+            return JsonSerializer.Deserialize<T>(File.ReadAllText(path)) ?? fallback;
+        }
+        catch
+        {
+            return fallback;
+        }
+    }
+
     private static void Save<T>(string path, List<T> items)
     {
         try
@@ -128,6 +149,18 @@ public sealed class BrowserStore
         catch
         {
             // 磁盘不可写时静默忽略，不影响浏览
+        }
+    }
+
+    private static void SaveOne<T>(string path, T value)
+    {
+        try
+        {
+            File.WriteAllText(path, JsonSerializer.Serialize(value, JsonOptions));
+        }
+        catch
+        {
+            // 同上
         }
     }
 }
