@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:;" />
+  <title>MinimalBrowser</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="tabbar">
+    <div id="tabs"></div>
+    <button id="newTab" title="新建标签页 (Ctrl+T)">＋</button>
+  </div>
+
+  <div id="toolbar">
+    <span id="privateBadge" hidden>无痕模式</span>
+    <button class="nav" data-act="back" title="后退 (Alt+←)">←</button>
+    <button class="nav" data-act="forward" title="前进 (Alt+→)">→</button>
+    <button class="nav" data-act="reload" title="刷新 (F5)">⟳</button>
+    <button class="nav" data-act="stop" title="停止加载">✕</button>
+    <button class="nav" data-act="home" title="主页">⌂</button>
+    <select id="engine" title="选择搜索引擎"></select>
+    <input id="address" type="text" spellcheck="false" autocomplete="off" />
+    <button class="nav" data-act="bookmark" title="收藏 / 取消收藏 (Ctrl+D)">☆</button>
+    <button data-act="favorites" title="显示收藏夹 (Ctrl+B)">收藏夹</button>
+    <button data-act="history" title="显示历史记录 (Ctrl+H)">历史</button>
+    <button data-act="downloads" title="显示下载内容 (Ctrl+J)">下载</button>
+  </div>
+
+  <div id="content">
+    <div id="pages"></div>
+
+    <aside id="side" hidden>
+      <div class="side-head">
+        <span id="sideTitle">收藏夹</span>
+        <button id="sideClose" title="关闭">✕</button>
+      </div>
+      <ul id="sideList"></ul>
+      <div class="side-foot">
+        <button id="sideDelete">删除选中</button>
+        <button id="sideClear" hidden>清空历史</button>
+      </div>
+    </aside>
+
+    <aside id="downloadsPanel" hidden>
+      <div class="side-head">
+        <span>下载内容</span>
+        <button id="downloadsClose" title="关闭">✕</button>
+      </div>
+      <ul id="downloadsList"></ul>
+      <div class="side-foot">
+        <button id="downloadRename" title="重命名选中项 (F2)">重命名</button>
+      </div>
+    </aside>
+  </div>
+
+  <div id="tabMenu" class="menu" hidden></div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

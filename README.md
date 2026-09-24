@@ -4,6 +4,8 @@
 
 复用系统自带的 Edge 内核，不额外打包 Chromium，因此体积和内存占用都远小于 Electron 方案。
 
+> Linux 版见 [`Linux/`](Linux/README.md) —— 基于 Electron 的移植版，功能与操作方式一致。Linux 上没有可复用的系统浏览器内核，因此那一版自带 Chromium、体积更大。
+
 ## 功能
 
 - **多标签页** —— 标签宽度固定，中键关闭，右键菜单可「关闭标签页 / 关闭其他标签页 / 新建无痕窗口」；末尾常驻 `＋` 页，点击即新建
@@ -34,12 +36,13 @@
 
 ## 下载使用
 
-从 [Releases](../../releases) 页面下载，二选一：
+从 [Releases](../../releases) 页面下载。Windows 版二选一，另有 Linux 版 AppImage：
 
 | 版本 | 大小 | 说明 |
 | --- | --- | --- |
 | `MinimalBrowser-v1.2.0-win-x64.exe` | 约 63 MB | 免安装单文件，双击即用，无需安装 .NET 运行时 |
 | `MinimalBrowser-v1.2.0-win-x64-framework-dependent.zip` | 约 550 KB | 需预装 .NET 8 Desktop Runtime；解压后整个文件夹一起使用，不能只拷贝 exe |
+| `MinimalBrowser-Linux-1.0.0-x86_64.AppImage` | 约 111 MB | Linux x64 免安装单文件，`chmod +x` 后直接运行 |
 
 ## 从源码构建
 
@@ -92,7 +95,8 @@ MinimalBrowser/
 ├── DownloadForm.cs         # 下载列表面板（进度、速度、重命名）
 ├── Models.cs               # Bookmark / HistoryEntry / AppSettings 数据模型
 ├── app.ico                 # 程序图标（16~256 共 7 个尺寸）
-└── MinimalBrowser.csproj   # net8.0-windows + WinForms + WebView2
+├── MinimalBrowser.csproj   # net8.0-windows + WinForms + WebView2
+└── Linux/                  # Linux 版（Electron），见 Linux/README.md
 ```
 
 ## 实现说明

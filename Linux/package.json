@@ -1,0 +1,44 @@
+{
+  "name": "minimal-browser-linux",
+  "productName": "MinimalBrowser",
+  "version": "1.0.0",
+  "description": "Linux 上基于 Electron 的极简浏览器",
+  "main": "src/main.js",
+  "license": "MIT",
+  "author": "m1539952304-sketch",
+  "desktopName": "MinimalBrowser",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --linux AppImage tar.gz --publish never",
+    "dist:appimage": "electron-builder --linux AppImage --publish never"
+  },
+  "devDependencies": {
+    "electron": "^38.2.2",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.m1539952304.minimalbrowser",
+    "productName": "MinimalBrowser",
+    "artifactName": "MinimalBrowser-Linux-${version}-${arch}.${ext}",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "tar.gz"
+      ],
+      "category": "Network;WebBrowser",
+      "icon": "build/icon.png",
+      "syncDesktopName": true,
+      "synopsis": "极简浏览器",
+      "description": "Windows 10 极简浏览器的 Linux 版，基于 Electron。"
+    }
+  }
+}
