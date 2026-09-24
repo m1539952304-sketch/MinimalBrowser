@@ -8,10 +8,10 @@
 
 - **多标签页** —— 标签宽度固定，中键关闭，右键菜单可「关闭标签页 / 关闭其他标签页」；末尾常驻 `＋` 页，点击即新建
 - **地址栏** —— 自动识别输入内容：带 `://` 按网址处理，不含空格且含 `.` 自动补 `https://`，其余走 Bing 搜索
-- **基础导航** —— 前进 / 后退 / 刷新 / 主页
+- **基础导航** —— 前进 / 后退 / 刷新 / 停止加载 / 主页
 - **收藏夹** —— 一键收藏（`Ctrl+D`），侧栏查看、跳转、删除
 - **历史记录** —— 自动记录，同地址 5 秒内去重，上限 2000 条，支持单条删除和一键清空
-- **下载管理** —— 接管下载并显示进度 / 已下载大小 / 状态，双击打开文件，可定位到文件夹
+- **下载管理** —— 接管下载并显示进度 / 实时速度 / 状态，双击打开文件，可定位到文件夹
 - **全屏适配** —— 页面进入全屏（如视频）时自动隐藏工具栏
 - **新窗口接管** —— 页面中 `target=_blank` 的链接在新标签页打开
 
@@ -35,8 +35,8 @@
 
 | 版本 | 大小 | 说明 |
 | --- | --- | --- |
-| `MinimalBrowser-v1.0.0-win-x64.exe` | 约 63 MB | 免安装单文件，双击即用，无需安装 .NET 运行时 |
-| `MinimalBrowser-v1.0.0-win-x64-framework-dependent.zip` | 约 420 KB | 需预装 .NET 8 Desktop Runtime；解压后整个文件夹一起使用，不能只拷贝 exe |
+| `MinimalBrowser-v1.0.1-win-x64.exe` | 约 63 MB | 免安装单文件，双击即用，无需安装 .NET 运行时 |
+| `MinimalBrowser-v1.0.1-win-x64-framework-dependent.zip` | 约 425 KB | 需预装 .NET 8 Desktop Runtime；解压后整个文件夹一起使用，不能只拷贝 exe |
 
 ## 从源码构建
 
@@ -93,11 +93,16 @@ MinimalBrowser/
 
 - **共享 WebView2 环境**：所有标签页共用一个 `CoreWebView2Environment`（同一 user data 目录），共享浏览器进程，内存开销低于每标签一个进程。
 - **快捷键拦截**：网页获得焦点时键盘消息直接进 WebView2，不经过 WinForms，因此用 `IMessageFilter` 在消息分发前拦截；`Ctrl+F`、`Ctrl+P`、缩放等仍交给 WebView2 原生处理。
-- **自定义下载界面**：接管 `DownloadStarting` 并设置 `Handled = true` 屏蔽 WebView2 默认下载 UI，自动重名避让。
+- **自定义下载界面**：接管 `DownloadStarting` 并设置 `Handled = true` 屏蔽 WebView2 默认下载 UI，自动重名避让。速度由 `BytesReceived` 的相邻两次采样差值估算，采样间隔不足 400ms 时沿用上次读数，避免读数抖动。
+- **加载状态**：`NavigationStarting` / `NavigationCompleted` 维护 `BrowserTab.IsLoading`，用于控制「停止」按钮的启用状态。
 
 ## 已知限制
 
 - 仅支持 Windows x64
 - 未实现无痕模式、扩展、账号同步
 - 未做崩溃恢复，关闭即丢失标签页
-- 图标、下载重命名、多引擎切换等尚未提供
+- 未提供程序图标、下载重命名、多搜索引擎切换
+
+## License
+
+[MIT](LICENSE)

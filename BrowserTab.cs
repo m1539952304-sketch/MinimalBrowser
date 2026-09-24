@@ -17,6 +17,9 @@ public sealed class BrowserTab : IDisposable
     public string CurrentTitle { get; private set; } = "新标签页";
     public bool IsInitialized { get; private set; }
 
+    /// <summary>是否正在加载页面，用于控制「停止」按钮的可用状态。</summary>
+    public bool IsLoading { get; private set; }
+
     /// <summary>地址、标题或前进后退状态发生变化时触发。</summary>
     public event EventHandler? Updated;
 
@@ -55,12 +58,14 @@ public sealed class BrowserTab : IDisposable
         {
             if (!IsInitialized) return;
             CurrentUrl = e.Uri;
+            IsLoading = true;
             Updated?.Invoke(this, EventArgs.Empty);
         };
 
         core.NavigationCompleted += (_, e) =>
         {
             if (!IsInitialized) return;
+            IsLoading = false;
             if (e.IsSuccess) NavigationFinished?.Invoke(this, core.Source);
             Updated?.Invoke(this, EventArgs.Empty);
         };
@@ -105,6 +110,11 @@ public sealed class BrowserTab : IDisposable
     public void Reload()
     {
         if (IsInitialized) View.CoreWebView2.Reload();
+    }
+
+    public void Stop()
+    {
+        if (IsInitialized && IsLoading) View.CoreWebView2.Stop();
     }
 
     private void SetTitle(string? title)

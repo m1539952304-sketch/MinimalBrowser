@@ -33,6 +33,7 @@ public sealed class MainForm : Form
     private readonly ToolStripButton _btnBack = TextButton("←", "后退 (Alt+←)");
     private readonly ToolStripButton _btnForward = TextButton("→", "前进 (Alt+→)");
     private readonly ToolStripButton _btnReload = TextButton("⟳", "刷新 (F5)");
+    private readonly ToolStripButton _btnStop = TextButton("✕", "停止加载");
     private readonly ToolStripButton _btnHome = TextButton("⌂", "主页");
 
     private readonly ToolStripTextBox _address = new()
@@ -135,7 +136,7 @@ public sealed class MainForm : Form
     {
         _toolbar.Items.AddRange(new ToolStripItem[]
         {
-            _btnBack, _btnForward, _btnReload, _btnHome,
+            _btnBack, _btnForward, _btnReload, _btnStop, _btnHome,
             _address,
             _btnBookmark, _btnFavorites, _btnHistory, _btnDownloads, _btnNewTab,
         });
@@ -145,6 +146,7 @@ public sealed class MainForm : Form
         _btnBack.Click += (_, _) => ActiveTab?.GoBack();
         _btnForward.Click += (_, _) => ActiveTab?.GoForward();
         _btnReload.Click += (_, _) => ActiveTab?.Reload();
+        _btnStop.Click += (_, _) => ActiveTab?.Stop();
         _btnHome.Click += (_, _) => Navigate(HomePage);
         _btnBookmark.Click += (_, _) => ToggleBookmark();
         _btnFavorites.Click += (_, _) => ShowSide(SideMode.Favorites);
@@ -609,6 +611,7 @@ public sealed class MainForm : Form
         _btnBack.Enabled = tab?.CanGoBack == true;
         _btnForward.Enabled = tab?.CanGoForward == true;
         _btnReload.Enabled = tab is not null;
+        _btnStop.Enabled = tab?.IsLoading == true;
 
         if (!_address.Control.Focused)
             _address.Text = tab?.CurrentUrl ?? "";

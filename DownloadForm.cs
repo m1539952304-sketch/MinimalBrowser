@@ -6,16 +6,23 @@ namespace MinimalBrowser;
 /// <summary>下载列表面板。关闭时只隐藏，不销毁。</summary>
 public sealed class DownloadForm : Form
 {
+    /// <summary>速度采样的最小间隔，间隔太短读数会剧烈抖动。</summary>
+    private const int SpeedSampleMs = 400;
+
     private readonly ListView _list = new();
     private readonly Button _btnOpenFolder = new();
     private readonly Button _btnClear = new();
     private readonly Dictionary<CoreWebView2DownloadOperation, Row> _rows = new();
+    private readonly System.Windows.Forms.Timer _ticker = new() { Interval = 500 };
 
     private sealed class Row
     {
         public ListViewItem Item { get; }
         public string TargetPath { get; }
         public bool Completed { get; set; }
+        public bool Active { get; set; } = true;
+        public long LastBytes { get; set; }
+        public DateTime LastSampleUtc { get; set; } = DateTime.UtcNow;
 
         public Row(ListViewItem item, string targetPath)
         {
@@ -27,8 +34,8 @@ public sealed class DownloadForm : Form
     public DownloadForm()
     {
         Text = "下载内容";
-        ClientSize = new Size(780, 400);
-        MinimumSize = new Size(560, 260);
+        ClientSize = new Size(900, 400);
+        MinimumSize = new Size(600, 260);
         StartPosition = FormStartPosition.CenterParent;
         ShowInTaskbar = false;
         MinimizeBox = false;
@@ -40,11 +47,14 @@ public sealed class DownloadForm : Form
         _list.MultiSelect = false;
         _list.HideSelection = false;
         _list.HeaderStyle = ColumnHeaderStyle.Nonclickable;
-        _list.Columns.Add("文件名", 230);
+        _list.Columns.Add("文件名", 220);
         _list.Columns.Add("进度", 190);
+        _list.Columns.Add("速度", 100);
         _list.Columns.Add("状态", 80);
         _list.Columns.Add("保存位置", 260);
         _list.DoubleClick += (_, _) => OpenSelectedFile();
+
+        _ticker.Tick += (_, _) => RefreshActive();
 
         var bottom = new FlowLayoutPanel
         {
@@ -72,7 +82,7 @@ public sealed class DownloadForm : Form
     /// <summary>把一个新下载任务加入列表，并持续跟踪它的进度。</summary>
     public void Track(CoreWebView2DownloadOperation operation, string fileName, string targetPath)
     {
-        var item = new ListViewItem(new[] { fileName, "0%", "下载中", targetPath });
+        var item = new ListViewItem(new[] { fileName, "0%", "-", "下载中", targetPath });
         var row = new Row(item, targetPath);
 
         _rows[operation] = row;
@@ -80,6 +90,8 @@ public sealed class DownloadForm : Form
 
         operation.BytesReceivedChanged += (_, _) => Refresh(operation);
         operation.StateChanged += (_, _) => Refresh(operation);
+
+        if (!_ticker.Enabled) _ticker.Start();
 
         Refresh(operation);
     }
@@ -97,11 +109,11 @@ public sealed class DownloadForm : Form
             received = operation.BytesReceived;
             totalBytes = operation.TotalBytesToReceive;
             state = operation.State;
-            row.Item.SubItems[3].Text = operation.ResultFilePath;
+            row.Item.SubItems[4].Text = operation.ResultFilePath;
         }
         catch
         {
-            return;
+            return; // 下载对象可能已被释放
         }
 
         ulong total = totalBytes ?? 0;
@@ -110,22 +122,57 @@ public sealed class DownloadForm : Form
             ? $"{received * 100.0 / total:0}%  ({FormatSize(received)} / {FormatSize(total)})"
             : FormatSize(received);
 
+        row.Item.SubItems[2].Text = state == CoreWebView2DownloadState.InProgress
+            ? SampleSpeed(row, received)
+            : "-";
+
         switch (state)
         {
             case CoreWebView2DownloadState.InProgress:
-                row.Item.SubItems[2].Text = "下载中";
+                row.Item.SubItems[3].Text = "下载中";
                 break;
             case CoreWebView2DownloadState.Completed:
-                row.Item.SubItems[2].Text = "已完成";
+                row.Item.SubItems[3].Text = "已完成";
                 row.Completed = true;
+                row.Active = false;
                 break;
             case CoreWebView2DownloadState.Interrupted:
-                row.Item.SubItems[2].Text = "已中断";
+                row.Item.SubItems[3].Text = "已中断";
+                row.Active = false;
                 break;
             default:
-                row.Item.SubItems[2].Text = "未知";
+                row.Item.SubItems[3].Text = "未知";
+                row.Active = false;
                 break;
         }
+    }
+
+    /// <summary>用两次采样之间的字节差估算瞬时速度；间隔不足时沿用上次读数。</summary>
+    private static string SampleSpeed(Row row, long received)
+    {
+        var now = DateTime.UtcNow;
+        var elapsedMs = (now - row.LastSampleUtc).TotalMilliseconds;
+        if (elapsedMs < SpeedSampleMs) return row.Item.SubItems[2].Text;
+
+        long delta = received - row.LastBytes; // 断点续传会让计数回退，此时不显示速度
+        row.LastBytes = received;
+        row.LastSampleUtc = now;
+
+        if (delta <= 0) return "-";
+        return FormatSize(delta / (elapsedMs / 1000.0)) + "/s";
+    }
+
+    /// <summary>定时刷新未结束的任务；全部结束后停表，避免空转。</summary>
+    private void RefreshActive()
+    {
+        var active = _rows.Where(p => p.Value.Active).ToList();
+        if (active.Count == 0)
+        {
+            _ticker.Stop();
+            return;
+        }
+
+        foreach (var pair in active) Refresh(pair.Key);
     }
 
     private void ClearCompleted()
@@ -181,6 +228,12 @@ public sealed class DownloadForm : Form
             unit++;
         }
         return unit == 0 ? $"{bytes:0} B" : $"{value:0.##} {units[unit]}";
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) _ticker.Dispose();
+        base.Dispose(disposing);
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)
