@@ -38,8 +38,8 @@
 
 | 版本 | 大小 | 说明 |
 | --- | --- | --- |
-| `MinimalBrowser-v1.1.0-win-x64.exe` | 约 63 MB | 免安装单文件，双击即用，无需安装 .NET 运行时 |
-| `MinimalBrowser-v1.1.0-win-x64-framework-dependent.zip` | 约 550 KB | 需预装 .NET 8 Desktop Runtime；解压后整个文件夹一起使用，不能只拷贝 exe |
+| `MinimalBrowser-v1.2.0-win-x64.exe` | 约 63 MB | 免安装单文件，双击即用，无需安装 .NET 运行时 |
+| `MinimalBrowser-v1.2.0-win-x64-framework-dependent.zip` | 约 550 KB | 需预装 .NET 8 Desktop Runtime；解压后整个文件夹一起使用，不能只拷贝 exe |
 
 ## 从源码构建
 
