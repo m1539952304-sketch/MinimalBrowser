@@ -1,0 +1,15 @@
+# 构建输出
+bin/
+obj/
+publish/
+dist/
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo
+*.userprefs
+
+# 其他
+*.log
