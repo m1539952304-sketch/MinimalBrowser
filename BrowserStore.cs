@@ -14,10 +14,12 @@ public sealed class BrowserStore
     private readonly string _bookmarksPath;
     private readonly string _historyPath;
     private readonly string _settingsPath;
+    private readonly string _sessionPath;
 
     public List<Bookmark> Bookmarks { get; private set; }
     public List<HistoryEntry> History { get; private set; }
     public AppSettings Settings { get; private set; }
+    public SessionState Session { get; private set; }
 
     public BrowserStore()
     {
@@ -29,10 +31,12 @@ public sealed class BrowserStore
         _bookmarksPath = Path.Combine(dir, "bookmarks.json");
         _historyPath = Path.Combine(dir, "history.json");
         _settingsPath = Path.Combine(dir, "settings.json");
+        _sessionPath = Path.Combine(dir, "session.json");
 
         Bookmarks = Load<Bookmark>(_bookmarksPath);
         History = Load<HistoryEntry>(_historyPath);
         Settings = LoadOne(_settingsPath, new AppSettings());
+        Session = LoadOne(_sessionPath, new SessionState());
     }
 
     // ---------- 收藏夹 ----------
@@ -111,6 +115,15 @@ public sealed class BrowserStore
     // ---------- 用户偏好 ----------
 
     public void SaveSettings() => SaveOne(_settingsPath, Settings);
+
+    // ---------- 会话 ----------
+
+    /// <summary>记录当前打开的标签页，供下次启动恢复。</summary>
+    public void SaveSession(SessionState session)
+    {
+        Session = session;
+        SaveOne(_sessionPath, session);
+    }
 
     // ---------- 读写 ----------
 

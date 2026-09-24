@@ -18,6 +18,7 @@
 - **全屏适配** —— 页面进入全屏（如视频）时自动隐藏工具栏
 - **新窗口接管** —— 页面中 `target=_blank` 的链接在新标签页打开
 - **无痕模式** —— `Ctrl+Shift+N` 或标签右键菜单打开无痕窗口，Cookie、缓存等浏览数据只留在内存、不写入磁盘，也不记录历史；无痕窗口与普通窗口共享收藏夹
+- **会话恢复** —— 打开中的标签页持续写入本地，正常关闭或进程被强杀后，下次启动都会恢复到上次的标签页与选中位置（无痕窗口不参与）
 
 数据存放位置：
 
@@ -25,6 +26,7 @@
 | --- | --- |
 | 收藏夹 / 历史 | `%APPDATA%\MinimalBrowser\bookmarks.json`、`history.json` |
 | 用户偏好（搜索引擎等） | `%APPDATA%\MinimalBrowser\settings.json` |
+| 上次打开的标签页（恢复用） | `%APPDATA%\MinimalBrowser\session.json` |
 | 浏览器缓存 | `%LOCALAPPDATA%\MinimalBrowser\WebView2\` |
 | 默认下载目录 | `%USERPROFILE%\Downloads` |
 
@@ -91,9 +93,9 @@ MinimalBrowser/
 ├── Program.cs              # 入口（PerMonitorV2 DPI）与程序图标加载
 ├── MainForm.cs             # 主窗口：工具栏、标签页、侧栏、下载、快捷键
 ├── BrowserTab.cs           # 单个标签页，封装 WebView2 并收敛事件
-├── BrowserStore.cs         # 收藏夹 / 历史 / 用户偏好的 JSON 本地存储
+├── BrowserStore.cs         # 收藏夹 / 历史 / 用户偏好 / 会话 的 JSON 本地存储
 ├── DownloadForm.cs         # 下载列表面板（进度、速度、重命名）
-├── Models.cs               # Bookmark / HistoryEntry / AppSettings 数据模型
+├── Models.cs               # Bookmark / HistoryEntry / AppSettings / SessionState 数据模型
 ├── app.ico                 # 程序图标（16~256 共 7 个尺寸）
 ├── MinimalBrowser.csproj   # net8.0-windows + WinForms + WebView2
 └── Linux/                  # Linux 版（Electron），见 Linux/README.md
@@ -108,12 +110,12 @@ MinimalBrowser/
 - **加载状态**：`NavigationStarting` / `NavigationCompleted` 维护 `BrowserTab.IsLoading`，用于控制「停止」按钮的启用状态。
 - **图标**：`app.ico` 同时通过 `ApplicationIcon` 嵌入 exe 资源（资源管理器 / 任务栏），并以 `LogicalName=MinimalBrowser.app.ico` 作为清单资源嵌入，供 `AppIcon` 在运行时读取后赋给窗口标题栏。
 - **无痕模式**：`CoreWebView2ControllerOptions.IsInPrivateModeEnabled` 是 per-controller 选项，因此无痕窗口与普通窗口共用同一个 user data 目录和环境，无需准备第二份配置；无痕标签在创建控制器时开启该选项，浏览数据只留在内存。无痕窗口通过 `NavigationFinished` 事件判断跳过历史写入，并在 UI 上禁用历史入口。窗口间共享同一个 `BrowserStore` 实例，收藏夹改动对普通窗口立即可见。
+- **会话恢复**：标签页的增删、切换与每次加载完成都会把当前地址列表与选中下标写进 `session.json`，属于增量写入而非退出时统一写，所以进程被强杀也留得住最近状态；启动时按这份列表逐个建标签页并选回原来的位置。恢复过程中用 `_restoring` 标志挂起来自标签页事件的会话写入，避免把恢复了一半的列表当成新会话存回去。空白页不写入会话，因此只开着一个空白页的窗口不会留下无意义的记录。
 
 ## 已知限制
 
 - 仅支持 Windows x64
 - 未实现扩展、账号同步
-- 未做崩溃恢复，关闭即丢失标签页
 - 下载重命名仅支持已完成的任务，不能重命名下载中的文件
 
 ## License

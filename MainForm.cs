@@ -35,6 +35,9 @@ public sealed class MainForm : Form
     private CoreWebView2Environment? _environment;
     private bool _suppressTabEvents;
 
+    /// <summary>恢复会话期间不写会话文件，避免把恢复中的半截标签页当成新会话存下来。</summary>
+    private bool _restoring;
+
     // ---------- 工具栏 ----------
     private readonly ToolStrip _toolbar = new()
     {
@@ -282,7 +285,63 @@ public sealed class MainForm : Form
         }
 
         LayoutAddressBar();
-        await AddNewTabAsync(HomePage);
+        await OpenStartupTabsAsync();
+    }
+
+    /// <summary>
+    /// 打开启动时的标签页：有上次的会话就逐个恢复（含异常退出后的崩溃恢复），否则开一个空白页。
+    /// 无痕窗口不恢复任何标签页。
+    /// </summary>
+    private async Task OpenStartupTabsAsync()
+    {
+        var urls = _private ? new List<string>() : _store.Session.Tabs.Where(IsSessionUrl).ToList();
+
+        _restoring = true;
+        try
+        {
+            if (urls.Count == 0)
+            {
+                await AddNewTabAsync(HomePage);
+                return;
+            }
+
+            foreach (var url in urls) await AddNewTabAsync(url);
+
+            int index = Math.Clamp(_store.Session.ActiveIndex, 0, urls.Count - 1);
+            var restored = Tabs.ElementAt(index);
+            _tabs.SelectedTab = restored.Page;
+            restored.View.Focus();
+        }
+        finally
+        {
+            _restoring = false;
+            SaveSession();
+        }
+    }
+
+    /// <summary>空白页与空地址没有恢复价值，不写进会话。</summary>
+    private static bool IsSessionUrl(string? url) =>
+        !string.IsNullOrWhiteSpace(url) && url != HomePage;
+
+    /// <summary>
+    /// 把当前窗口的标签页写给下一次启动。标签页的增删、切换与页面加载完成都会调用，
+    /// 因此即使进程被强杀，文件里也是最近一次的状态。
+    /// </summary>
+    private void SaveSession()
+    {
+        if (_private || _restoring) return;
+
+        var session = new SessionState();
+        var active = ActiveTab;
+
+        foreach (var tab in Tabs)
+        {
+            if (!IsSessionUrl(tab.CurrentUrl)) continue;
+            if (ReferenceEquals(tab, active)) session.ActiveIndex = session.Tabs.Count;
+            session.Tabs.Add(tab.CurrentUrl);
+        }
+
+        _store.SaveSession(session);
     }
 
     // ================= 标签页 =================
@@ -314,6 +373,7 @@ public sealed class MainForm : Form
             // 无痕窗口不留浏览记录
             if (_private) return;
             if (sender is BrowserTab finished) _store.AddHistory(finished.CurrentTitle, target);
+            SaveSession();
         };
 
         _tabs.TabPages.Insert(Math.Max(0, _tabs.TabPages.Count - 1), tab.Page);
@@ -363,6 +423,7 @@ public sealed class MainForm : Form
         if (ReferenceEquals(_tabs.SelectedTab, _newTabPage) && Tabs.LastOrDefault() is { } fallback)
             _tabs.SelectedTab = fallback.Page;
 
+        SaveSession();
         UpdateChrome();
     }
 
@@ -382,6 +443,7 @@ public sealed class MainForm : Form
             return;
         }
 
+        SaveSession();
         UpdateChrome();
     }
 
@@ -713,6 +775,8 @@ public sealed class MainForm : Form
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         Application.RemoveMessageFilter(_shortcutFilter);
+
+        SaveSession();
 
         foreach (var tab in Tabs.ToList())
         {
