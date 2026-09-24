@@ -36,9 +36,24 @@ public sealed class BrowserTab : IDisposable
         Page.Controls.Add(View);
     }
 
-    public async Task InitializeAsync(CoreWebView2Environment environment, string startUrl)
+    /// <summary>
+    /// 初始化 WebView2。<paramref name="privateMode"/> 为 true 时以 InPrivate 方式创建控制器，
+    /// Cookie、缓存等浏览数据只存在内存里，不写入 user data 目录。
+    /// </summary>
+    public async Task InitializeAsync(CoreWebView2Environment environment, string startUrl, bool privateMode = false)
     {
-        await View.EnsureCoreWebView2Async(environment);
+        if (privateMode)
+        {
+            // InPrivate 是 per-controller 选项，因此可以和普通窗口共用同一个 user data 目录，
+            // 不需要为无痕模式单独准备一份环境。
+            var options = environment.CreateCoreWebView2ControllerOptions();
+            options.IsInPrivateModeEnabled = true;
+            await View.EnsureCoreWebView2Async(environment, options);
+        }
+        else
+        {
+            await View.EnsureCoreWebView2Async(environment);
+        }
 
         var core = View.CoreWebView2;
         core.Settings.IsStatusBarEnabled = true;

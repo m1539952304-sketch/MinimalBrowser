@@ -21,10 +21,16 @@ public sealed class MainForm : Form
 
     private sealed record SideItem(string Display, string Url, DateTime Time);
 
-    private readonly BrowserStore _store = new();
+    private readonly BrowserStore _store;
     private readonly DownloadForm _downloadForm = new();
     private readonly ContextMenuStrip _tabMenu = new();
     private readonly ShortcutMessageFilter _shortcutFilter;
+
+    /// <summary>当前窗口是否为无痕窗口。无痕窗口的标签页全部以 InPrivate 方式创建。</summary>
+    private readonly bool _private;
+
+    /// <summary>阻止无痕窗口被回收；窗口关闭时移除。</summary>
+    private static readonly List<MainForm> IncognitoWindows = new();
 
     private CoreWebView2Environment? _environment;
     private bool _suppressTabEvents;
@@ -66,6 +72,18 @@ public sealed class MainForm : Form
     private readonly ToolStripButton _btnHistory = TextButton("历史", "显示历史记录 (Ctrl+H)");
     private readonly ToolStripButton _btnDownloads = TextButton("下载", "显示下载内容 (Ctrl+J)");
     private readonly ToolStripButton _btnNewTab = TextButton("＋", "新建标签页 (Ctrl+T)");
+
+    /// <summary>无痕模式标识，只在无痕窗口里显示。</summary>
+    private readonly ToolStripLabel _privateBadge = new("无痕模式")
+    {
+        Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
+        BackColor = Color.FromArgb(38, 38, 42),
+        ForeColor = Color.FromArgb(245, 245, 245),
+        Margin = new Padding(0, 0, 6, 0),
+        Padding = new Padding(6, 0, 6, 0),
+        Visible = false,
+        ToolTipText = "无痕模式：不记录浏览历史，Cookie 与缓存不写入磁盘",
+    };
 
     // ---------- 标签页 ----------
     private readonly TabControl _tabs = new()
@@ -116,9 +134,12 @@ public sealed class MainForm : Form
 
     private SideMode _sideMode = SideMode.Favorites;
 
-    public MainForm()
+    public MainForm(BrowserStore store, bool privateMode = false)
     {
-        Text = "MinimalBrowser";
+        _store = store;
+        _private = privateMode;
+
+        Text = BaseTitle;
         ClientSize = new Size(1200, 780);
         MinimumSize = new Size(680, 440);
         StartPosition = FormStartPosition.CenterScreen;
@@ -135,12 +156,22 @@ public sealed class MainForm : Form
         Controls.Add(_sidePanel);
         Controls.Add(_toolbar);
 
+        if (_private)
+        {
+            _privateBadge.Visible = true;
+            // 无痕窗口不记录历史，隐藏入口避免误导
+            _btnHistory.Enabled = false;
+            _btnHistory.ToolTipText = "无痕模式下不记录历史";
+        }
+
         _tabs.SelectedIndexChanged += Tabs_SelectedIndexChanged;
         _tabs.MouseUp += Tabs_MouseUp;
 
         _shortcutFilter = new ShortcutMessageFilter(this);
         Application.AddMessageFilter(_shortcutFilter);
     }
+
+    private string BaseTitle => _private ? "MinimalBrowser（无痕模式）" : "MinimalBrowser";
 
     // ================= 初始化 =================
 
@@ -154,6 +185,7 @@ public sealed class MainForm : Form
     {
         _toolbar.Items.AddRange(new ToolStripItem[]
         {
+            _privateBadge,
             _btnBack, _btnForward, _btnReload, _btnStop, _btnHome,
             _engine,
             _address,
@@ -217,7 +249,7 @@ public sealed class MainForm : Form
         int used = 0;
         foreach (ToolStripItem item in _toolbar.Items)
         {
-            if (ReferenceEquals(item, _address)) continue;
+            if (ReferenceEquals(item, _address) || !item.Visible) continue;
             used += item.Width + item.Margin.Horizontal;
         }
 
@@ -279,6 +311,8 @@ public sealed class MainForm : Form
         };
         tab.NavigationFinished += (sender, target) =>
         {
+            // 无痕窗口不留浏览记录
+            if (_private) return;
             if (sender is BrowserTab finished) _store.AddHistory(finished.CurrentTitle, target);
         };
 
@@ -287,7 +321,7 @@ public sealed class MainForm : Form
 
         try
         {
-            await tab.InitializeAsync(_environment, url);
+            await tab.InitializeAsync(_environment, url, _private);
         }
         catch (Exception ex)
         {
@@ -378,6 +412,8 @@ public sealed class MainForm : Form
         _tabMenu.Items.Clear();
         _tabMenu.Items.Add("关闭标签页", null, (_, _) => CloseTab(tab));
         _tabMenu.Items.Add("关闭其他标签页", null, (_, _) => CloseOtherTabs(tab));
+        _tabMenu.Items.Add(new ToolStripSeparator());
+        _tabMenu.Items.Add("新建无痕窗口", null, (_, _) => OpenIncognitoWindow());
         _tabMenu.Show(_tabs, _tabs.PointToClient(Cursor.Position));
     }
 
@@ -465,30 +501,45 @@ public sealed class MainForm : Form
             // 长按产生的自动重复不再重复触发
             if (((long)m.LParam & (1L << 30)) != 0) return false;
 
+            // 可能同时开着多个窗口，只处理焦点所在窗口的按键。
+            // 模态对话框（如保存文件）打开时 ActiveForm 是对话框，此时不拦快捷键。
+            if (!ReferenceEquals(Form.ActiveForm, _form)) return false;
+
             var modifiers = Control.ModifierKeys;
             return _form.TryHandleShortcut(
                 (Keys)(int)m.WParam,
                 modifiers.HasFlag(Keys.Control),
-                modifiers.HasFlag(Keys.Alt));
+                modifiers.HasFlag(Keys.Alt),
+                modifiers.HasFlag(Keys.Shift));
         }
     }
 
-    private bool TryHandleShortcut(Keys keyCode, bool ctrl, bool alt)
+    private bool TryHandleShortcut(Keys keyCode, bool ctrl, bool alt, bool shift)
     {
         switch (keyCode)
         {
-            case Keys.T when ctrl: NewTab(); return true;
+            case Keys.T when ctrl && !shift: NewTab(); return true;
+            case Keys.N when ctrl && shift: OpenIncognitoWindow(); return true;
             case Keys.W when ctrl: CloseActiveTab(); return true;
             case Keys.L when ctrl: FocusAddressBar(); return true;
             case Keys.D when ctrl: ToggleBookmark(); return true;
             case Keys.B when ctrl: ShowSide(SideMode.Favorites); return true;
-            case Keys.H when ctrl: ShowSide(SideMode.History); return true;
+            case Keys.H when ctrl && !_private: ShowSide(SideMode.History); return true;
             case Keys.J when ctrl: ShowDownloads(); return true;
             case Keys.F5 when !ctrl && !alt: ActiveTab?.Reload(); return true;
             case Keys.Left when alt: ActiveTab?.GoBack(); return true;
             case Keys.Right when alt: ActiveTab?.GoForward(); return true;
             default: return false;
         }
+    }
+
+    /// <summary>新开一个无痕窗口。无痕窗口与普通窗口共用收藏夹，但不共享 Cookie 与缓存。</summary>
+    private void OpenIncognitoWindow()
+    {
+        var window = new MainForm(_store, privateMode: true);
+        IncognitoWindows.Add(window);
+        window.FormClosed += (_, _) => IncognitoWindows.Remove(window);
+        window.Show();
     }
 
     private void CloseActiveTab()
@@ -655,8 +706,8 @@ public sealed class MainForm : Form
         _btnBookmark.Text = bookmarked ? "★" : "☆";
 
         Text = tab is not null && !string.IsNullOrWhiteSpace(tab.CurrentTitle)
-            ? $"{tab.CurrentTitle} - MinimalBrowser"
-            : "MinimalBrowser";
+            ? $"{tab.CurrentTitle} - {BaseTitle}"
+            : BaseTitle;
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)

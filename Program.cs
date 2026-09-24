@@ -8,7 +8,11 @@ internal static class Program
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
-        Application.Run(new MainForm());
+
+        // 所有窗口共用一个 store，这样无痕窗口和普通窗口看到同一份收藏夹，
+        // 也不会出现两个窗口各自持有一份内存副本、互相覆盖对方改动的问题。
+        var store = new BrowserStore();
+        Application.Run(new MainForm(store));
     }
 }
 
