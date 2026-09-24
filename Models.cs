@@ -25,7 +25,7 @@ public sealed class AppSettings
 
 /// <summary>
 /// 上次退出时打开的标签页。写入是在浏览过程中持续进行的，因此即使进程被强杀，
-/// 文件里也是最近一次的状态，下次启动可以恢复。
+/// 文件里也是最近一次的状态；<see cref="CleanExit"/> 用来区分「正常关闭」与「异常退出」。
 /// </summary>
 public sealed class SessionState
 {
@@ -34,4 +34,7 @@ public sealed class SessionState
 
     /// <summary>退出时处于选中状态的标签页下标。</summary>
     public int ActiveIndex { get; set; }
+
+    /// <summary>上次是否正常关闭。false 表示崩溃 / 被强杀 / 随系统关机，下次启动应恢复标签页。</summary>
+    public bool CleanExit { get; set; }
 }

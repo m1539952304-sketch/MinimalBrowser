@@ -38,6 +38,9 @@ public sealed class MainForm : Form
     /// <summary>恢复会话期间不写会话文件，避免把恢复中的半截标签页当成新会话存下来。</summary>
     private bool _restoring;
 
+    /// <summary>本次退出是否属于正常关闭。只有异常退出才在下次启动时恢复标签页。</summary>
+    private bool _cleanExit;
+
     // ---------- 工具栏 ----------
     private readonly ToolStrip _toolbar = new()
     {
@@ -289,12 +292,15 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
-    /// 打开启动时的标签页：有上次的会话就逐个恢复（含异常退出后的崩溃恢复），否则开一个空白页。
+    /// 打开启动时的标签页：上次是异常退出（崩溃 / 被强杀 / 关机）才逐个恢复，正常关闭过就开一个空白页。
     /// 无痕窗口不恢复任何标签页。
     /// </summary>
     private async Task OpenStartupTabsAsync()
     {
-        var urls = _private ? new List<string>() : _store.Session.Tabs.Where(IsSessionUrl).ToList();
+        var session = _store.Session;
+        var urls = !_private && !session.CleanExit
+            ? session.Tabs.Where(IsSessionUrl).ToList()
+            : new List<string>();
 
         _restoring = true;
         try
@@ -307,7 +313,7 @@ public sealed class MainForm : Form
 
             foreach (var url in urls) await AddNewTabAsync(url);
 
-            int index = Math.Clamp(_store.Session.ActiveIndex, 0, urls.Count - 1);
+            int index = Math.Clamp(session.ActiveIndex, 0, urls.Count - 1);
             var restored = Tabs.ElementAt(index);
             _tabs.SelectedTab = restored.Page;
             restored.View.Focus();
@@ -325,13 +331,14 @@ public sealed class MainForm : Form
 
     /// <summary>
     /// 把当前窗口的标签页写给下一次启动。标签页的增删、切换与页面加载完成都会调用，
-    /// 因此即使进程被强杀，文件里也是最近一次的状态。
+    /// 因此即使进程被强杀，文件里也是最近一次的状态。写入时带上 <see cref="_cleanExit"/>，
+    /// 正常关闭会把会话标记成无需恢复。
     /// </summary>
     private void SaveSession()
     {
         if (_private || _restoring) return;
 
-        var session = new SessionState();
+        var session = new SessionState { CleanExit = _cleanExit };
         var active = ActiveTab;
 
         foreach (var tab in Tabs)
@@ -776,7 +783,13 @@ public sealed class MainForm : Form
     {
         Application.RemoveMessageFilter(_shortcutFilter);
 
-        SaveSession();
+        // WebView2 没能初始化时（_environment 为空）不碰会话文件，好让上次崩溃留下的标签页还有机会恢复
+        if (_environment is not null)
+        {
+            // 用户主动关窗口算正常退出，下次不再恢复；被任务管理器结束或随系统关机则保留会话
+            _cleanExit = e.CloseReason is not (CloseReason.TaskManagerClosing or CloseReason.WindowsShutDown);
+            SaveSession();
+        }
 
         foreach (var tab in Tabs.ToList())
         {
